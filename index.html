@@ -121,12 +121,7 @@
     // Jouw specifieke allergenenprofiel
     const ALLERGENEN = [
         { naam: "Melk", trefwoorden: ["melk", "wei", "caseïn", "lactose", "boter", "room", "kaas", "melkpoeder", "curd", "milk", "whey", "butter"] },
-        { naam: "Soja", trefwoorden: ["soja", "soy", "sojaboon", "soybean", "tofu"] },
-        { naam: "Avocado", trefwoorden: ["avocado"] },
-        { naam: "Oregano", trefwoorden: ["oregano"] },
-        { naam: "Kikkererwt", trefwoorden: ["kikkererwt", "chickpea"] },
-        { naam: "Ui", trefwoorden: ["ui", "uienpoeder", "prei", "leek", "onion"] },
-        { naam: "Kunstmatige Zoetstoffen", trefwoorden: ["sucralose", "aspartaam", "aspartame", "sacharine", "acesulfaam", "acesulfame", "neotaam", "erythritol", "xylitol", "sorbitol", "maltitol", "steviol", "stevia"] }
+        { naam: "Soja", trefwoorden: ["soja", "soy", "sojaboon", "soybean", "tofu"] }
     ];
 
     cameraInput.addEventListener('change', handleFileSelect);
@@ -225,10 +220,6 @@
         const veiligeWoorden = [
             // Soja-uitzonderingen
             "sojalecithine", "sojalecitine", "soy lecithin", 
-            
-            // Melk/zuivel-uitzonderingen
-            "melkvet", "milk fat", "watervrij melkvet", "milkfat",
-            "butterfat",
             
             // Plantaardige melksoorten (Geen sojamelk, want soja is een allergeen!)
             "havermelk", "oat milk",
