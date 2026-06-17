@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mijn Allergenen Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f9f9f9;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px 0;
+            width: 100%;
+        }
+        .camera-btn { background-color: #28a745; }
+        .file-btn { background-color: #6c757d; }
+        .crop-btn { background-color: #ffc107; color: #212529; display: none; margin-top: 10px; }
+        
+        /* Cropper container styling */
+        .img-container {
+            max-width: 100%;
+            max-height: 400px;
+            margin-top: 15px;
+            display: none;
+        }
+        img {
+            max-width: 100%;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            font-weight: bold;
+            display: none;
+            text-align: left;
+            white-space: pre-wrap;
+        }
+        #rawTextContainer {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #e9ecef;
+            color: #495057;
+            font-size: 14px;
+            text-align: left;
+            white-space: pre-wrap;
+            display: none;
+            border: 1px solid #ced4da;
+        }
+        .raw-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #212529;
+        }
+        .safe { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .danger { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .loading { background-color: #fff3cd; color: #856404; text-align: center; }
+    </style>
+
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h2>Allergenen Scanner</h2>
+    <p>Maak een foto of kies een bestand, snijd de ingrediënten bij en scan direct. Let op dat het kan zijn dat er staat ''kan (sporen) bevatten'' en dan wordt hij ook getriggerd. Probeer dit zoveel mogelijk van de uitsnede af te houden.</p>
+    
+    <button type="button" class="camera-btn" onclick="document.getElementById('cameraInput').click()">📷 Open Camera</button>
+    <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display: none;">
+
+    <button type="button" class="file-btn" onclick="document.getElementById('fileInput').click()">📁 Kies uit Bestanden / Foto's</button>
+    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+
+    <div class="img-container">
+        <img id="imageToCrop" src="">
+    </div>
+    
+    <button type="button" id="cropButton" class="crop-btn">✂️ Selectie Uitsnijden & Scannen</button>
+    
+    <div id="result"></div>
+
+    <div id="rawTextContainer">
+        <div class="raw-title">Gescande tekst (ter controle):</div>
+        <div id="rawTextContent"></div>
+    </div>
+</div>
+
+<script>
+    const cameraInput = document.getElementById('cameraInput');
+    const fileInput = document.getElementById('fileInput');
+    const imageToCrop = document.getElementById('imageToCrop');
+    const cropButton = document.getElementById('cropButton');
+    const resultDiv = document.getElementById('result');
+    const rawTextContainer = document.getElementById('rawTextContainer');
+    const rawTextContent = document.getElementById('rawTextContent');
+    const imgContainer = document.querySelector('.img-container');
+    
+    let cropper;
+
+    // Jouw specifieke allergenenprofiel
+    const ALLERGENEN = [
+        { naam: "Melk", trefwoorden: ["melk", "wei", "caseïn", "lactose", "boter", "room", "kaas", "melkpoeder", "curd", "milk", "whey", "butter"] },
+        { naam: "Soja", trefwoorden: ["soja", "soy", "sojaboon", "soybean", "tofu"] },
+        { naam: "Avocado", trefwoorden: ["avocado"] },
+        { naam: "Oregano", trefwoorden: ["oregano"] },
+        { naam: "Kikkererwt", trefwoorden: ["kikkererwt", "chickpea"] },
+        { naam: "Ui", trefwoorden: ["ui", "uienpoeder", "prei", "leek", "onion"] },
+        { naam: "Kunstmatige Zoetstoffen", trefwoorden: ["sucralose", "aspartaam", "aspartame", "sacharine", "acesulfaam", "acesulfame", "neotaam", "erythritol", "xylitol", "sorbitol", "maltitol", "steviol", "stevia"] }
+    ];
+
+    cameraInput.addEventListener('change', handleFileSelect);
+    fileInput.addEventListener('change', handleFileSelect);
+
+    function handleFileSelect(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            if (cropper) { cropper.destroy(); }
+            
+            imageToCrop.src = event.target.result;
+            imgContainer.style.display = 'block';
+            cropButton.style.display = 'block';
+            resultDiv.style.display = 'none';
+            rawTextContainer.style.display = 'none'; // Verberg oude tekst bij nieuwe scan
+
+            cropper = new Cropper(imageToCrop, {
+                viewMode: 1,
+                autoCropArea: 1,
+                movable: true,
+                zoomable: true,
+                rotatable: false,
+                scalable: false
+            });
+        }
+        reader.readAsDataURL(file);
+    }
+
+    cropButton.addEventListener('click', () => {
+        if (!cropper) return;
+
+        const canvas = cropper.getCroppedCanvas({ maxWidth: 2048, maxHeight: 2048 });
+        
+        imgContainer.style.display = 'none';
+        cropButton.style.display = 'none';
+        resultDiv.className = 'loading';
+        resultDiv.style.display = 'block';
+        resultDiv.innerText = "Tekst uit je uitsnede aan het lezen (OCR)...";
+
+        canvas.toBlob((blob) => {
+            analyzeLabel(blob);
+        }, 'image/jpeg', 0.95);
+    });
+
+    async function analyzeLabel(blobFile) {
+        try {
+            const result = await Tesseract.recognize(blobFile, 'nld+eng', {
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        resultDiv.innerText = `Scannen: ${Math.round(m.progress * 100)}%`;
+                    }
+                }
+            });
+
+            // Sla de originele tekst op zoals hij gelezen is (inclusief hoofdletters)
+            const origineleTekst = result.data.text;
+            
+            // Toon de gelezen ingrediënten onderaan het scherm
+            if (origineleTekst && origineleTekst.trim() !== "") {
+                rawTextContent.innerText = origineleTekst;
+                rawTextContainer.style.display = 'block';
+            } else {
+                rawTextContent.innerText = "[Geen tekst kunnen lezen. Zorg voor een scherpere foto.]";
+                rawTextContainer.style.display = 'block';
+            }
+
+            // Voer de allergenen-check uit op de kleine letters variant
+            checkAllergenen(origineleTekst.toLowerCase());
+
+        } catch (error) {
+            resultDiv.className = 'danger';
+            resultDiv.innerText = "Fout bij het lokaal scannen: " + error.message;
+        }
+    }
+
+    function checkAllergenen(tekst) {
+        let gevondenAllergenen = [];
+
+        // 1. Maak de tekst schoon van leestekens, we laten letters aan elkaar plakken voor soja/melk
+        let schoneTekst = tekst
+            .replaceAll("-", "") 
+            .replaceAll("(", " ")
+            .replaceAll(")", " ")
+            .replaceAll(",", " ")
+            .replaceAll(".", " ")
+            .replaceAll(":", " ")
+            .replaceAll(";", " ")
+            .replaceAll("/", " ")
+            .replaceAll("_", " ")
+            .replaceAll("\n", " ");
+
+        // 2. Jouw lijst met VEILIGE uitzonderingen voor melk en soja
+        const veiligeWoorden = [
+            // Soja-uitzonderingen
+            "sojalecithine", "sojalecitine", "soy lecithin", 
+            
+            // Melk/zuivel-uitzonderingen
+            "melkvet", "milk fat", "watervrij melkvet", "milkfat",
+            "butterfat",
+            
+            // Plantaardige melksoorten (Geen sojamelk, want soja is een allergeen!)
+            "havermelk", "oat milk",
+            "amandelmelk", "almond milk",
+            "kokosmelk", "coconut milk",
+            "rijstmelk", "rice milk",
+            "erwtenmelk", "pea milk",
+            "cashewmelk", "cashew milk",
+            "hazelnootmelk", "hazelnut milk",
+            "macadamiamelk", "macadamia milk",
+            "hennepmelk", "hemp milk",
+            "speltmelk", "spelt milk",
+
+            // Plantaardige room
+            "haverroom", "oat cream",
+            "kokosroom", "coconut cream",
+            "amandelroom", "almond cream",
+            "rijstroom", "rice cream",
+            
+            // Producten met 'boter' in de naam (geen zuivel)
+            "cacaoboter", "cocoa butter", "cacao boter",
+            "pindaboter", "peanut butter",
+            "amandelboter", "almond butter",
+            "cashewboter", "cashew butter",
+            "hazelnootboter", "hazelnut butter",
+            "pompoenpitboter", "pumpkin seed butter",
+            "zonnebloempitboter", "sunflower seed butter",
+            "sheaboter", "shea butter",
+            "appelboter", "apple butter",
+            "boterbonen", "butter beans",
+            "botersla", "butterhead lettuce",
+            "boterzuur", "butyric acid", // Veelgebruikt, veilig additief
+            
+            // Producten met 'kaas' of 'room' in de naam (geen zuivel)
+            "pindakaas",
+            "leverkaas", "hoofdkaas", "vleeskaas", // Vleeswaren
+            "kaasjeskruid", // Plant (mallow)
+            "roomse kervel", // Kruid
+            
+            // Woorden waar toevallig 'wei' in verstopt zit
+            "boekweit", "boekweitmeel", "buckwheat",
+            "weizen", "weizenbloem", "weizenmeel"
+        ];
+        
+        veiligeWoorden.forEach(veiligWoord => {
+            schoneTekst = schoneTekst.replaceAll(veiligWoord, "[veilig]");
+        });
+
+        // 3. DE SCANNER LOGICA
+        ALLERGENEN.forEach(allergeen => {
+            
+            // SPECIAL CHECK VOOR UI: Omdat 'ui' in 'suiker' en 'zuivel' zit, moeten we hier extra voorzichtig zijn
+            if (allergeen.naam === "Ui") {
+                // We hakken de tekst in losse woorden om te kijken of het woord 'ui', 'uienpoeder' of 'onion' er ECHT los in staat
+                let triggers = allergeen.trefwoorden.filter(woord => {
+                    return schoneTekst.split(" ").includes(woord);
+                });
+                if (triggers.length > 0) {
+                    gevondenAllergenen.push(`${allergeen.naam} (omdat we vonden: "${triggers.join(', ')}")`);
+                }
+            } 
+            
+            // VOOR ALLE ANDERE ALLERGENEN: Blijven we jouw superveilige, brede zoekmethode gebruiken!
+            else {
+                let triggers = allergeen.trefwoorden.filter(woord => {
+                    return schoneTekst.includes(woord);
+                });
+                if (triggers.length > 0) {
+                    gevondenAllergenen.push(`${allergeen.naam} (omdat we vonden: "${triggers.join(', ')}")`);
+                }
+            }
+        });
+
+        // 4. Resultaat tonen
+        if (gevondenAllergenen.length > 0) {
+            resultDiv.className = "danger";
+            resultDiv.innerText = "UITKOMST: GEVAAR\n\nPas op! De volgende ingrediënten zijn ontdekt:\n• " + gevondenAllergenen.join("\n• ");
+        } else {
+            resultDiv.className = "safe";
+            resultDiv.innerText = "UITKOMST: VEILIG\n\nGeen van Lorannes allergenen zijn direct teruggevonden op het label.";
+        }
+    }
+</script>
+
+</body>
+</html>
